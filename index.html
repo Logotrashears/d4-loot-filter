@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>d4-loot-filter — Diablo IV Loot Filter for Windows</title>
+<meta name="description" content="Diablo IV loot filter for Windows: regex affix rules, per-slot stat thresholds, auto-hide junk drops, in-game overlay preview, and import/export rule sets." />
+<style>
+  :root {
+    --bg-0: #070a18;
+    --bg-1: #0c1030;
+    --bg-2: #141a3d;
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-strong: rgba(255, 255, 255, 0.09);
+    --stroke: rgba(255, 255, 255, 0.12);
+    --text: #e8ebff;
+    --muted: #9aa3c7;
+    --accent: #7c5cff;
+    --accent-2: #22d3ee;
+    --accent-3: #f472b6;
+    --radius: 16px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(124, 92, 255, 0.28), transparent 60%),
+      radial-gradient(1000px 700px at 90% 0%, rgba(34, 211, 238, 0.16), transparent 55%),
+      radial-gradient(900px 900px at 50% 110%, rgba(244, 114, 182, 0.12), transparent 60%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  .wrap {
+    width: 100%;
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ---------- NAV ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    background: rgba(10, 13, 34, 0.55);
+    border-bottom: 1px solid var(--stroke);
+  }
+
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    height: 68px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    font-size: 1.05rem;
+    white-space: nowrap;
+  }
+
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 18px rgba(124, 92, 255, 0.55);
+    font-size: 0.95rem;
+  }
+
+  .brand span.grad {
+    background: linear-gradient(90deg, #c9c2ff, #7ef0ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    font-size: 0.93rem;
+    color: var(--muted);
+  }
+
+  .nav-links a {
+    position: relative;
+    transition: color 0.2s ease;
+  }
+
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-links a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -6px;
+    width: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.25s ease;
+  }
+
+  .nav-links a:hover::after { width: 100%; }
+
+  /* ---------- BUTTONS ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    color: #0a0a1a;
+    background: linear-gradient(135deg, #a78bfa 0%, #22d3ee 100%);
+    box-shadow: 0 10px 30px -10px rgba(124, 92, 255, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 40px -12px rgba(124, 92, 255, 1), 0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+  }
+
+  .btn-ghost {
+    color: var(--text);
+    background: var(--glass);
+    border-color: var(--stroke);
+    backdrop-filter: blur(8px);
+  }
+
+  .btn-ghost:hover {
+    transform: translateY(-2px);
+    background: var(--glass-strong);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
+  .btn-nav { padding: 10px 18px; font-size: 0.88rem; }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    padding: 96px 0 72px;
+    text-align: center;
+    position: relative;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    color: #cfd6ff;
+    background: rgba(124, 92, 255, 0.12);
+    border: 1px solid rgba(124, 92, 255, 0.38);
+    box-shadow: 0 0 26px -6px rgba(124, 92, 255, 0.6);
+  }
+
+  .pill .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent-2);
+    box-shadow: 0 0 10px var(--accent-2);
+  }
+
+  h1 {
+    margin: 26px auto 20px;
+    max-width: 900px;
+    font-size: clamp(2.1rem, 6vw, 4rem);
+    line-height: 1.08;
+    letter-spacing: -1.4px;
+    font-weight: 900;
+    background: linear-gradient(100deg, #ffffff 0%, #c7bcff 38%, #7ef0ff 72%, #f9a8d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hero p.lead {
+    max-width: 660px;
+    margin: 0 auto 34px;
+    color: var(--muted);
+    font-size: 1.06rem;
+  }
+
+  .hero-cta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    margin-bottom: 46px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    max-width: 840px;
+    margin: 0 auto;
+  }
+
+  .stat {
+    padding: 16px 12px;
+    border-radius: 14px;
+    background: var(--glass);
+    border: 1px solid var(--stroke);
+    backdrop-filter: blur(10px);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  .stat:hover {
+    transform: translateY(-3px);
+    border-color: rgba(124, 92, 255, 0.45);
+  }
+
+  .stat .val {
+    display: block;
+    font-weight: 800;
+    font-size: 1.08rem;
+    letter-spacing: -0.3px;
+    background: linear-gradient(90deg, #d7d1ff, #8ceaf7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .stat .lbl {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* ---------- SECTIONS ---------- */
+  section { padding: 72px 0; }
+
+  .section-head {
+    text-align: center;
+    max-width: 640px;
+    margin: 0 auto 44px;
+  }
+
+  .eyebrow {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    margin-bottom: 10px;
+  }
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: clamp(1.6rem, 3.6vw, 2.3rem);
+    letter-spacing: -0.8px;
+    font-weight: 850;
+    background: linear-gradient(95deg, #ffffff, #bfb6ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .section-head p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.98rem;
+  }
+
+  /* ---------- FEATURES ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    position: relative;
+    padding: 26px 24px 24px;
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025));
+    border: 1px solid var(--stroke);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+    transition: transform 0.22s ease, box-shadow 0.28s ease, border-color 0.22s ease;
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    opacity: 0.85;
+  }
+
+  .card:nth-child(2)::before { background: linear-gradient(90deg, var(--accent-2), #34d399); }
+  .card:nth-child(3)::before { background: linear-gradient(90deg, var(--accent-3), var(--accent)); }
+  .card:nth-child(4)::before { background: linear-gradient(90deg, #fbbf24, var(--accent-3)); }
+  .card:nth-child(5)::before { background: linear-gradient(90deg, #38bdf8, #a78bfa); }
+  .card:nth-child(6)::before { background: linear-gradient(90deg, #34d399, #22d3ee); }
+
+  .card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(124, 92, 255, 0.42);
+    box-shadow: 0 22px 44px -22px rgba(0, 0, 0, 0.85), 0 0 34px -18px rgba(124, 92, 255, 0.75);
+  }
+
+  .card .emoji {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    font-size: 1.35rem;
+    background: rgba(124, 92, 255, 0.14);
+    border: 1px solid rgba(124, 92, 255, 0.28);
+    margin-bottom: 16px;
+  }
+
+  .card h3 {
+    margin: 0 0 8px;
+    font-size: 1.04rem;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+  }
+
+  .card p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  /* ---------- HOW IT WORKS ---------- */
+  .steps {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    padding-left: 34px;
+  }
+
+  .steps::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 55%, rgba(244, 114, 182, 0.25) 100%);
+    box-shadow: 0 0 22px rgba(124, 92, 255, 0.55);
+  }
+
+  .step {
+    position: relative;
+    padding: 0 0 34px 0;
+  }
+
+  .step:last-child { padding-bottom: 0; }
+
+  .step .num {
+    position: absolute;
+    left: -34px;
+    top: 2px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #0a0a1a;
+    background: linear-gradient(135deg, #a78bfa, #22d3ee);
+    box-shadow: 0 0 0 5px rgba(10, 13, 34, 0.95), 0 0 22px rgba(124, 92, 255, 0.8);
+  }
+
+  .step h3 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    padding-top: 5px;
+  }
+
+  .step p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.93rem;
+  }
+
+  /* ---------- FAQ ---------- */
+  .faq {
+    max-width: 780px;
+    margin: 0 auto;
+    display: grid;
+    gap: 12px;
+  }
+
+  details {
+    border-radius: 14px;
+    background: var(--glass);
+    border: 1px solid var(--stroke);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+    transition: border-color 0.22s ease, background 0.22s ease;
+  }
+
+  details[open] {
+    border-color: rgba(124, 92, 255, 0.45);
+    background: rgba(124, 92, 255, 0.09);
+  }
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    font-weight: 700;
+    font-size: 0.97rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  summary::-webkit-details-marker { display: none; }
+
+  summary .icon {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent-2);
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.28);
+    transition: transform 0.28s ease, color 0.28s ease, background 0.28s ease;
+  }
+
+  details[open] summary .icon {
+    transform: rotate(45deg);
+    color: #ffd1e8;
+    background: rgba(244, 114, 182, 0.14);
+    border-color: rgba(244, 114, 182, 0.4);
+  }
+
+  details .answer {
+    padding: 0 20px 20px;
+    color: var(--muted);
+    font-size: 0.92rem;
+    margin: 0;
+  }
+
+  /* ---------- CTA BANNER ---------- */
+  .cta-banner {
+    position: relative;
+    overflow: hidden;
+    border-radius: 22px;
+    padding: 56px 32px;
+    text-align: center;
+    background: linear-gradient(135deg, rgba(124, 92, 255, 0.22), rgba(34, 211, 238, 0.12) 60%, rgba(244, 114, 182, 0.16));
+    border: 1px solid rgba(124, 92, 255, 0.42);
+    box-shadow: 0 30px 80px -40px rgba(124, 92, 255, 0.9);
+  }
+
+  .cta-banner::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 720px;
+    height: 720px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(124, 92, 255, 0.45) 0%, rgba(34, 211, 238, 0.18) 38%, transparent 68%);
+    pointer-events: none;
+  }
+
+  .cta-banner > * { position: relative; z-index: 1; }
+
+  .cta-banner h2 { margin-bottom: 14px; }
+
+  .cta-banner p {
+    max-width: 560px;
+    margin: 0 auto 28px;
+    color: #c6cbf0;
+    font-size: 1rem;
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer {
+    border-top: 1px solid var(--stroke);
+    padding: 30px 0 40px;
+    margin-top: 40px;
+  }
+
+  .foot-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 0.86rem;
+    color: var(--muted);
+  }
+
+  .foot-inner a {
+    color: #cfd6ff;
+    font-weight: 700;
+    transition: color 0.2s ease;
+  }
+
+  .foot-inner a:hover { color: var(--accent-2); }
+
+  .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 640px) {
+    .nav-links { display: none; }
+
+    .nav-inner { height: 62px; gap: 10px; }
+
+    .brand { font-size: 0.95rem; }
+
+    .btn-nav { padding: 9px 14px; font-size: 0.8rem; }
+
+    .hero { padding: 60px 0 48px; }
+
+    h1 { letter-spacing: -0.8px; }
+
+    .hero p.lead { font-size: 0.97rem; }
+
+    .hero-cta { flex-direction: column; align-items: stretch; }
+
+    .hero-cta .btn { width: 100%; }
+
+    .stats { grid-template-columns: 1fr; }
+
+    .grid { grid-template-columns: 1fr; }
+
+    section { padding: 52px 0; }
+
+    .cta-banner { padding: 40px 20px; border-radius: 18px; }
+
+    .foot-inner { flex-direction: column; text-align: center; }
+
+    .step h3 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top">
+        <span class="brand-mark">⚔️</span>
+        <span>d4-loot-filter <span class="grad">for Windows</span></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="btn btn-primary btn-nav" href="https://gitscore.cc">Download</a>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="wrap">
+        <span class="pill"><span class="dot"></span>Diablo IV Loot Filter</span>
+        <h1>Stop drowning in junk drops. Loot with intent in Diablo IV.</h1>
+        <p class="lead">
+          d4-loot-filter is a Windows companion that reads your drops and applies regex affix rules,
+          per-slot stat thresholds, and auto-hide junk logic — with a live in-game overlay preview
+          and rule sets you can import and export in seconds.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://gitscore.cc">⬇ Download for Windows</a>
+          <a class="btn btn-ghost" href="https://gitscore.cc">View on GitHub</a>
+        </div>
+        <div class="stats">
+          <div class="stat"><span class="val">42,800+</span><span class="lbl">Downloads</span></div>
+          <div class="stat"><span class="val">v2.4.1</span><span class="lbl">Latest release</span></div>
+          <div class="stat"><span class="val">Windows 10 / 11</span><span class="lbl">Platform</span></div>
+          <div class="stat"><span class="val">Free &amp; open source</span><span class="lbl">License</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="eyebrow">Features</div>
+          <h2>Built for the grind, tuned for the loot</h2>
+          <p>Everything you need to turn a screen full of yellow and orange text into a readable, filterable feed of upgrades.</p>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <div class="emoji">🧩</div>
+            <h3>Regex affix rules</h3>
+            <p>Match affix names with full regex — combine prefixes, suffixes, and implicit lines to catch exactly the rolls you care about.</p>
+          </article>
+          <article class="card">
+            <div class="emoji">🎯</div>
+            <h3>Per-slot stat thresholds</h3>
+            <p>Set minimum values for each gear slot, like 15%+ Critical Strike Damage on gloves or 800+ Item Power on weapons.</p>
+          </article>
+          <article class="card">
+            <div class="emoji">🚫</div>
+            <h3>Auto-hide junk drops</h3>
+            <p>Instantly suppress white, blue, and low-roll rare drops so only potential upgrades and legendary affixes stay visible.</p>
+          </article>
+          <article class="card">
+            <div class="emoji">👁️</div>
+            <h3>In-game overlay preview</h3>
+            <p>See how each rule affects drops before you commit — the overlay previews highlighted and hidden items in real time.</p>
+          </article>
+          <article class="card">
+            <div class="emoji">📦</div>
+            <h3>Import / export rule sets</h3>
+            <p>Share your filter with friends or grab community builds. Rule sets export as clean JSON and import in one click.</p>
+          </article>
+          <article class="card">
+            <div class="emoji">⚡</div>
+            <h3>Lightweight Windows app</h3
